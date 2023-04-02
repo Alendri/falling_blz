@@ -1,0 +1,17 @@
+#:schema ./cargo.schema.json
+[package]
+name = "falling_blz"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Alendri/falling-blz"
+authors = ["Joakim 'Alendri' Johansson"]
+publish = false
+
+[dependencies]
+bevy = "0.10.1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

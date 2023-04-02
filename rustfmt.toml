@@ -1,0 +1,4 @@
+# blank_lines_upper_bound = 2
+# fn_single_line = true
+newline_style = "Unix"
+tab_spaces = 2

@@ -1,0 +1,9 @@
+{
+  "[rust]": {
+    "editor.formatOnSave": true,
+  },
+  "LineCount.includes": [
+    "**/src/**"
+  ],
+  "rust-analyzer.showUnlinkedFileNotification": false,
+}

@@ -1,0 +1,4 @@
+/target
+*.log
+api_log.json
+home.db
