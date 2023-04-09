@@ -67,6 +67,7 @@ struct Waves {
 impl Default for Waves {
   fn default() -> Self {
     let mut waves = create_waves();
+    println!("waves:{:#?}", waves);
     waves.reverse();
     Waves {
       current_wave: waves.pop().unwrap(),
@@ -83,8 +84,12 @@ fn setup(
   windows: Query<&Window>,
 ) {
   commands.spawn((Camera2dBundle::default(), MainCamera));
-  let win_w = windows.get_single().unwrap().width();
-  let win_h = windows.get_single().unwrap().height();
+
+  let win = windows
+    .get_single()
+    .expect("Could not get window reference.");
+  let win_w = win.width();
+  let win_h = win.height();
   commands.insert_resource(Zones {
     top: Zone::new(0, win_w as isize, (win_h / 8.0) as isize, 0),
     bottom: Zone::new(
@@ -176,17 +181,25 @@ fn spawn(
   let offset = time.elapsed_seconds_f64() - waves.wave_start_time;
   let wave = &mut waves.current_wave;
   if let Some(bucket) = wave.get_bucket(offset) {
-    for _ in 0..bucket.count {
+    for i in 0..bucket.count {
       let (x, y) = zones.top.get_rand_pt();
+      let val = i as isize % 3;
+      let color = match val {
+        0 => Color::PINK,
+        1 => Color::LIME_GREEN,
+        2 => Color::AQUAMARINE,
+        3 => Color::FUCHSIA,
+        _ => Color::PURPLE,
+      };
       commands.spawn((
         MaterialMesh2dBundle {
           mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
-          material: materials.add(ColorMaterial::from(Color::PURPLE)),
+          material: materials.add(ColorMaterial::from(color)),
           transform: Transform::from_translation(Vec3::new(x as f32, y as f32, 0.0)),
           ..default()
         },
         Target(TargetKind::Regular),
-        Velocity(INITIAL_BALL_DIRECTION.normalize() * INITIAL_BALL_SPEED),
+        Velocity(INITIAL_BALL_DIRECTION.normalize() * wave.velocity),
       ));
     }
   };

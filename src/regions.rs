@@ -11,7 +11,10 @@ pub struct Zone {
 }
 impl Zone {
   pub fn new(top: isize, right: isize, bottom: isize, left: isize) -> Self {
-    let (x_between, y_between) = Zone::create_rng(top..bottom, left..right);
+    let (x_between, y_between) = Zone::create_rng(
+      top.min(bottom)..top.max(bottom),
+      left.min(right)..left.max(right),
+    );
     Zone {
       top,
       right,
@@ -22,7 +25,10 @@ impl Zone {
     }
   }
   pub fn update(&mut self, top: isize, right: isize, bottom: isize, left: isize) {
-    let (x_between, y_between) = Zone::create_rng(top..bottom, left..right);
+    let (x_between, y_between) = Zone::create_rng(
+      top.min(bottom)..top.max(bottom),
+      left.min(right)..left.max(right),
+    );
     self.top = top;
     self.right = right;
     self.bottom = bottom;
@@ -41,8 +47,8 @@ impl Region for Zone {
 pub trait Region {
   fn create_rng(x_range: Range<isize>, y_range: Range<isize>) -> (Uniform<isize>, Uniform<isize>) {
     (
-      Uniform::try_from(x_range).unwrap(),
-      Uniform::try_from(y_range).unwrap(),
+      Uniform::try_from(x_range).expect("Could not create uniform distribution from x_range."),
+      Uniform::try_from(y_range).expect("Could not create uniform distribution from y_range."),
     )
   }
 
