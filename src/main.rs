@@ -1,13 +1,22 @@
+mod regions;
+mod waves;
 use bevy::{
   math::vec3,
   prelude::*,
   sprite::MaterialMesh2dBundle,
   window::{PresentMode, WindowResized},
 };
+use regions::{Region, Zone};
+use waves::{create_waves, Wave};
 
 const BALL_SIZE: f32 = 30.0;
 const INITIAL_BALL_SPEED: f32 = 1.0;
 const INITIAL_BALL_DIRECTION: Vec2 = Vec2::new(1.0, 0.0);
+
+#[derive(Debug)]
+pub enum TargetKind {
+  Regular,
+}
 
 fn main() {
   App::new()
@@ -22,14 +31,15 @@ fn main() {
     .add_system(bevy::window::close_on_esc)
     .add_system(apply_velocity)
     .add_system(resize_listening)
+    .add_system(spawn)
     .run();
 }
 
 //////
 //Marker components - Contains no data.
 //These are to allow querying specific entities. Such as "All enemies", "The player".
-#[derive(Component)]
-struct Ball;
+// #[derive(Component)]
+// struct Target;
 #[derive(Component)]
 struct MainCamera;
 
@@ -37,49 +47,65 @@ struct MainCamera;
 //Components - Contains some data, structs with data.
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
+#[derive(Component)]
+struct Target(TargetKind);
 
 #[derive(Resource)]
-///How far down the bottom zone starts and finishes.
-struct BottomZone {
-  start: isize,
-  middle: isize,
-  bottom: isize,
+///Where are the zones.
+struct Zones {
+  top: Zone,
+  bottom: Zone,
 }
+
 #[derive(Resource)]
-///How far down the top zone stretches.
-struct TopZone {
-  start: isize,
-  middle: isize,
-  bottom: isize,
+///Keeps track of the current wave index and the wave configuration.
+struct Waves {
+  waves: Vec<Wave>,
+  current_wave: Wave,
+  wave_start_time: f64,
+}
+impl Default for Waves {
+  fn default() -> Self {
+    let mut waves = create_waves();
+    waves.reverse();
+    Waves {
+      current_wave: waves.pop().unwrap(),
+      waves,
+      wave_start_time: 0.0,
+    }
+  }
 }
 
 fn setup(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<ColorMaterial>>,
+  windows: Query<&Window>,
 ) {
   commands.spawn((Camera2dBundle::default(), MainCamera));
+  let win_w = windows.get_single().unwrap().width();
+  let win_h = windows.get_single().unwrap().height();
+  commands.insert_resource(Zones {
+    top: Zone::new(0, win_w as isize, (win_h / 8.0) as isize, 0),
+    bottom: Zone::new(
+      (-win_h + (win_h / 8.0)) as isize,
+      win_w as isize,
+      -win_h as isize,
+      0,
+    ),
+  });
 
-  commands.insert_resource(BottomZone {
-    bottom: 0,
-    middle: 0,
-    start: 0,
-  });
-  commands.insert_resource(TopZone {
-    bottom: 80,
-    middle: 40,
-    start: 20,
-  });
+  let m = materials.add(ColorMaterial::from(Color::PURPLE));
 
   // Circle
   commands.spawn((
     MaterialMesh2dBundle {
       mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
-      material: materials.add(ColorMaterial::from(Color::PURPLE)),
+      material: m.clone(),
       transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
       ..default()
     },
-    Ball,
+    Target(TargetKind::Regular),
     Velocity(INITIAL_BALL_DIRECTION.normalize() * INITIAL_BALL_SPEED),
   ));
 
@@ -96,12 +122,6 @@ fn setup(
 
 fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
   for (mut transform, velocity) in &mut query {
-    // println!(
-    //   "translation x{} * delta{} = {}",
-    //   velocity.x,
-    //   time.delta_seconds(),
-    //   time.delta_seconds() * velocity.x
-    // );
     transform.translation.x += velocity.x * time.delta_seconds();
     transform.translation.y += velocity.y * time.delta_seconds();
   }
@@ -109,29 +129,65 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>
 
 fn resize_listening(
   mut resize_evts: EventReader<WindowResized>,
-  mut query: Query<&mut Transform, With<MainCamera>>,
-  mut bz: ResMut<BottomZone>,
+  mut cam_q: Query<&mut Transform, With<MainCamera>>,
+  mut zones: ResMut<Zones>,
 ) {
   if resize_evts.is_empty() {
     return;
   }
   println!("Resize handling");
-  let mut cam_transform = query.single_mut().into_inner();
+  let mut cam_transform = cam_q.single_mut().into_inner();
   for evt in resize_evts.iter() {
-    // cam_transform.translation = vec3(
-    //   evt.width / 2.0,
-    //   -evt.height / 2.0,
-    //   cam_transform.translation.z,
-    // );
-    update_sizing(&mut bz, &mut cam_transform, &evt.width, &evt.height)
+    update_sizing(&mut zones, &mut cam_transform, &evt.width, &evt.height)
   }
 }
 
-fn update_sizing(bz: &mut BottomZone, cam_transform: &mut Transform, width: &f32, height: &f32) {
+fn update_sizing(zones: &mut Zones, cam_transform: &mut Transform, width: &f32, height: &f32) {
   //Set the origin to top left of screen instead of center.
   cam_transform.translation = vec3(width / 2.0, -height / 2.0, cam_transform.translation.z);
 
-  bz.start = -height as isize + 100;
-  bz.middle = -height as isize + 50;
-  bz.bottom = -height as isize + 20;
+  zones
+    .top
+    .update(0, *width as isize, (height / 8.0) as isize, 0);
+  zones.bottom.update(
+    (-height + (height / 8.0)) as isize,
+    *width as isize,
+    -height as isize,
+    0,
+  );
+}
+
+fn spawn(
+  mut commands: Commands,
+  mut waves: Local<Waves>,
+  mut meshes: ResMut<Assets<Mesh>>,
+  mut materials: ResMut<Assets<ColorMaterial>>,
+  time: Res<Time>,
+  zones: Res<Zones>,
+) {
+  if time.elapsed_seconds_f64() - waves.wave_start_time > 10.0 && waves.current_wave.is_finished() {
+    //Next wave.
+    if let Some(new_wave) = waves.waves.pop() {
+      waves.current_wave = new_wave;
+    }
+    waves.wave_start_time = time.elapsed_seconds_f64();
+  }
+
+  let offset = time.elapsed_seconds_f64() - waves.wave_start_time;
+  let wave = &mut waves.current_wave;
+  if let Some(bucket) = wave.get_bucket(offset) {
+    for _ in 0..bucket.count {
+      let (x, y) = zones.top.get_rand_pt();
+      commands.spawn((
+        MaterialMesh2dBundle {
+          mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
+          material: materials.add(ColorMaterial::from(Color::PURPLE)),
+          transform: Transform::from_translation(Vec3::new(x as f32, y as f32, 0.0)),
+          ..default()
+        },
+        Target(TargetKind::Regular),
+        Velocity(INITIAL_BALL_DIRECTION.normalize() * INITIAL_BALL_SPEED),
+      ));
+    }
+  };
 }
