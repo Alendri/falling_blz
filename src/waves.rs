@@ -14,14 +14,22 @@ pub struct WaveBucket {
 #[derive(Debug)]
 ///Data for the contents of a single wave.
 pub struct Wave {
+  pub index: usize,
   pub velocity: f32,
   pub buckets: Vec<WaveBucket>,
   start_time: Option<f64>,
+  duration: f64,
 }
 
 impl Wave {
-  pub fn is_finished(&self) -> bool {
-    self.buckets.len() == 0
+  pub fn is_finished(&self, time: &f64) -> bool {
+    // println!("{}, self.start_time:{:?}", self.index, self.start_time);
+
+    if let Some(start_time) = self.start_time {
+      self.buckets.len() == 0 && time - start_time >= self.duration
+    } else {
+      false
+    }
   }
   pub fn get_bucket(&mut self, time: f64) -> Option<WaveBucket> {
     if self.buckets.len() == 0 {
@@ -32,7 +40,7 @@ impl Wave {
       return self.buckets.pop();
     }
     let start = self.start_time.unwrap();
-    let current_offset = start + time;
+    let current_offset = time - start;
     if current_offset >= self.buckets.last().unwrap().spawn_offset {
       return self.buckets.pop();
     }
@@ -129,11 +137,15 @@ impl WavesBuilder {
     self
       .waves
       .into_iter()
-      .map(|bw| {
+      .filter(|bw| bw.buckets.len() > 0)
+      .enumerate()
+      .map(|(wave_index, bw)| {
         //The length of time within which a bucket can be spawned.
         let bucket_duration = bw.duration / bw.buckets.length() as f64;
         let wave = Wave {
+          index: wave_index,
           start_time: None,
+          duration: bw.duration,
           buckets: bw
             .buckets
             .into_iter()
@@ -160,24 +172,26 @@ impl WavesBuilder {
 }
 
 pub fn create_waves() -> Vec<Wave> {
-  WavesBuilder::new(1.0)
-    .set_vel_increase(1.0)
-    .set_duration(3.0)
+  WavesBuilder::new(20.0)
+    .set_vel_increase(2.0)
+    .set_duration(6.0)
     .wave()
     .add(TargetKind::Regular, 1)
-    .wave_with_duration(5.0)
-    .wave()
+    .wave_with_duration(2.0)
     .add(TargetKind::Regular, 2)
-    .wave_with_duration(5.0)
+    .wave_with_duration(10.0)
+    .add(TargetKind::Regular, 4)
+    .add(TargetKind::Regular, 2)
+    .add(TargetKind::Regular, 1)
+    .set_vel_increase(8.0)
     .wave()
     .add(TargetKind::Regular, 4)
     .wave()
-    .set_vel_increase(4.0)
-    .add(TargetKind::Regular, 8)
+    .add(TargetKind::Regular, 4)
     .wave()
-    .add(TargetKind::Regular, 10)
+    .add(TargetKind::Regular, 4)
+    .wave()
     .set_vel(1000.0)
-    .wave()
     .add(TargetKind::Regular, 100)
     .build()
 }

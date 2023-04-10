@@ -9,9 +9,8 @@ use bevy::{
 use regions::{Region, Zone};
 use waves::{create_waves, Wave};
 
-const BALL_SIZE: f32 = 30.0;
-const INITIAL_BALL_SPEED: f32 = 1.0;
-const INITIAL_BALL_DIRECTION: Vec2 = Vec2::new(1.0, 0.0);
+const TARGET_SIZE: f32 = 30.0;
+const INITIAL_BALL_DIRECTION: Vec2 = Vec2::new(0.0, -1.0);
 
 #[derive(Debug)]
 pub enum TargetKind {
@@ -63,6 +62,7 @@ struct Waves {
   waves: Vec<Wave>,
   current_wave: Wave,
   wave_start_time: f64,
+  running: bool,
 }
 impl Default for Waves {
   fn default() -> Self {
@@ -73,14 +73,15 @@ impl Default for Waves {
       current_wave: waves.pop().unwrap(),
       waves,
       wave_start_time: 0.0,
+      running: true,
     }
   }
 }
 
 fn setup(
   mut commands: Commands,
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut materials: ResMut<Assets<ColorMaterial>>,
+  // mut meshes: ResMut<Assets<Mesh>>,
+  // mut materials: ResMut<Assets<ColorMaterial>>,
   windows: Query<&Window>,
 ) {
   commands.spawn((Camera2dBundle::default(), MainCamera));
@@ -90,39 +91,14 @@ fn setup(
     .expect("Could not get window reference.");
   let win_w = win.width();
   let win_h = win.height();
-  commands.insert_resource(Zones {
-    top: Zone::new(0, win_w as isize, (win_h / 8.0) as isize, 0),
-    bottom: Zone::new(
-      (-win_h + (win_h / 8.0)) as isize,
-      win_w as isize,
-      -win_h as isize,
-      0,
-    ),
-  });
+  let mut zones = Zones {
+    top: Zone::empty(),
+    bottom: Zone::empty(),
+  };
+  update_zones(&mut zones, &win_w, &win_h);
+  commands.insert_resource(zones);
 
-  let m = materials.add(ColorMaterial::from(Color::PURPLE));
-
-  // Circle
-  commands.spawn((
-    MaterialMesh2dBundle {
-      mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
-      material: m.clone(),
-      transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
-      ..default()
-    },
-    Target(TargetKind::Regular),
-    Velocity(INITIAL_BALL_DIRECTION.normalize() * INITIAL_BALL_SPEED),
-  ));
-
-  // Hexagon
-  commands.spawn(MaterialMesh2dBundle {
-    mesh: meshes
-      .add(shape::RegularPolygon::new(50.0, 6).into())
-      .into(),
-    material: materials.add(ColorMaterial::from(Color::TURQUOISE)),
-    transform: Transform::from_translation(Vec3::new(150.0, 0.0, 0.0)),
-    ..default()
-  });
+  // let m = materials.add(ColorMaterial::from(Color::PURPLE));
 }
 
 fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
@@ -151,14 +127,20 @@ fn update_sizing(zones: &mut Zones, cam_transform: &mut Transform, width: &f32, 
   //Set the origin to top left of screen instead of center.
   cam_transform.translation = vec3(width / 2.0, -height / 2.0, cam_transform.translation.z);
 
-  zones
-    .top
-    .update(0, *width as isize, (height / 8.0) as isize, 0);
+  update_zones(zones, width, height);
+}
+fn update_zones(zones: &mut Zones, width: &f32, height: &f32) {
+  zones.top.update(
+    -TARGET_SIZE,
+    width - TARGET_SIZE,
+    -(height / 8.0),
+    TARGET_SIZE,
+  );
   zones.bottom.update(
-    (-height + (height / 8.0)) as isize,
-    *width as isize,
-    -height as isize,
-    0,
+    -height + (height / 8.0),
+    width - TARGET_SIZE,
+    -height,
+    TARGET_SIZE,
   );
 }
 
@@ -170,20 +152,30 @@ fn spawn(
   time: Res<Time>,
   zones: Res<Zones>,
 ) {
-  if time.elapsed_seconds_f64() - waves.wave_start_time > 10.0 && waves.current_wave.is_finished() {
+  if !waves.running {
+    return;
+  }
+  if waves.current_wave.is_finished(&time.elapsed_seconds_f64()) {
+    println!("Finished wave {}.", waves.current_wave.index);
     //Next wave.
     if let Some(new_wave) = waves.waves.pop() {
       waves.current_wave = new_wave;
+    } else {
+      waves.running = false;
+      return;
     }
     waves.wave_start_time = time.elapsed_seconds_f64();
   }
 
-  let offset = time.elapsed_seconds_f64() - waves.wave_start_time;
   let wave = &mut waves.current_wave;
-  if let Some(bucket) = wave.get_bucket(offset) {
+  // println!("wave:{:#?}, offset:{:?}", wave, offset);
+
+  if let Some(bucket) = wave.get_bucket(time.elapsed_seconds_f64()) {
+    println!("wave:{:#?}", wave);
+    println!("bucket:{:#?}", bucket);
     for i in 0..bucket.count {
       let (x, y) = zones.top.get_rand_pt();
-      let val = i as isize % 3;
+      let val = i as isize % 4;
       let color = match val {
         0 => Color::PINK,
         1 => Color::LIME_GREEN,
@@ -191,11 +183,12 @@ fn spawn(
         3 => Color::FUCHSIA,
         _ => Color::PURPLE,
       };
+      // println!("spawn:{:?},{:?}   {:?}", x, y, color);
       commands.spawn((
         MaterialMesh2dBundle {
-          mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
+          mesh: meshes.add(shape::Circle::new(TARGET_SIZE).into()).into(),
           material: materials.add(ColorMaterial::from(color)),
-          transform: Transform::from_translation(Vec3::new(x as f32, y as f32, 0.0)),
+          transform: Transform::from_translation(Vec3::new(x as f32, y as f32, i as f32)),
           ..default()
         },
         Target(TargetKind::Regular),
