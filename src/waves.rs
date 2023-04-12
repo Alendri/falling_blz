@@ -172,7 +172,7 @@ impl WavesBuilder {
 }
 
 pub fn create_waves() -> Vec<Wave> {
-  WavesBuilder::new(20.0)
+  WavesBuilder::new(40.0)
     .set_vel_increase(2.0)
     .set_duration(6.0)
     .wave()

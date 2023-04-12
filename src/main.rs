@@ -1,15 +1,21 @@
-mod regions;
+mod interaction;
 mod waves;
+mod zones;
+
 use bevy::{
   math::vec3,
   prelude::*,
   sprite::MaterialMesh2dBundle,
   window::{PresentMode, WindowResized},
 };
-use regions::{Region, Zone};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use interaction::hit_check;
 use waves::{create_waves, Wave};
+use zones::{update_zones, Region, Zone, Zones};
 
-const TARGET_SIZE: f32 = 30.0;
+pub const TARGET_SIZE: f32 = 30.0;
+///Used when checking if any components have left the playing area and should be despawned.
+pub const WINDOW_EXPANSION: f32 = 200.0;
 const INITIAL_BALL_DIRECTION: Vec2 = Vec2::new(0.0, -1.0);
 
 #[derive(Debug)]
@@ -26,11 +32,13 @@ fn main() {
       }),
       ..default()
     }))
+    .add_plugin(WorldInspectorPlugin::new())
     .add_startup_system(setup)
     .add_system(bevy::window::close_on_esc)
     .add_system(apply_velocity)
     .add_system(resize_listening)
     .add_system(spawn)
+    .add_system(hit_check)
     .run();
 }
 
@@ -46,15 +54,8 @@ struct MainCamera;
 //Components - Contains some data, structs with data.
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
-#[derive(Component)]
-struct Target(TargetKind);
-
-#[derive(Resource)]
-///Where are the zones.
-struct Zones {
-  top: Zone,
-  bottom: Zone,
-}
+#[derive(Component, Debug)]
+pub struct Target(TargetKind);
 
 #[derive(Resource)]
 ///Keeps track of the current wave index and the wave configuration.
@@ -94,6 +95,7 @@ fn setup(
   let mut zones = Zones {
     top: Zone::empty(),
     bottom: Zone::empty(),
+    expanded_window: Zone::empty(),
   };
   update_zones(&mut zones, &win_w, &win_h);
   commands.insert_resource(zones);
@@ -101,11 +103,33 @@ fn setup(
   // let m = materials.add(ColorMaterial::from(Color::PURPLE));
 }
 
-fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
-  for (mut transform, velocity) in &mut query {
-    transform.translation.x += velocity.x * time.delta_seconds();
-    transform.translation.y += velocity.y * time.delta_seconds();
+fn apply_velocity(
+  mut commands: Commands,
+  time: Res<Time>,
+  zones: Res<Zones>,
+  mut query: Query<(Entity, &mut Transform, &Velocity, Option<&Target>)>,
+) {
+  for (entity, mut transform, velocity, target) in query.iter_mut() {
+    let x = transform.translation.x + velocity.x * time.delta_seconds();
+    let y = transform.translation.y + velocity.y * time.delta_seconds();
+
+    if target.is_some() && zones.bottom.is_pt_inside(x, y) {
+      //If this entity is a target and it is inside the bottom zone call end_game.
+      end_game();
+      commands.entity(entity).despawn();
+    }
+
+    if !zones.expanded_window.is_pt_inside(x, y) {
+      commands.entity(entity).despawn();
+    }
+
+    transform.translation.x = x;
+    transform.translation.y = y;
   }
+}
+
+fn end_game() {
+  println!("End game.");
 }
 
 fn resize_listening(
@@ -128,20 +152,6 @@ fn update_sizing(zones: &mut Zones, cam_transform: &mut Transform, width: &f32, 
   cam_transform.translation = vec3(width / 2.0, -height / 2.0, cam_transform.translation.z);
 
   update_zones(zones, width, height);
-}
-fn update_zones(zones: &mut Zones, width: &f32, height: &f32) {
-  zones.top.update(
-    -TARGET_SIZE,
-    width - TARGET_SIZE,
-    -(height / 8.0),
-    TARGET_SIZE,
-  );
-  zones.bottom.update(
-    -height + (height / 8.0),
-    width - TARGET_SIZE,
-    -height,
-    TARGET_SIZE,
-  );
 }
 
 fn spawn(
@@ -175,7 +185,7 @@ fn spawn(
     println!("bucket:{:#?}", bucket);
     for i in 0..bucket.count {
       let (x, y) = zones.top.get_rand_pt();
-      let val = i as isize % 4;
+      let val = wave.index as isize % 4;
       let color = match val {
         0 => Color::PINK,
         1 => Color::LIME_GREEN,
