@@ -12,6 +12,9 @@ bevy = "0.10.1"
 bevy-inspector-egui = "0.18.3"
 rand = "0.8.5"
 
+[dev-dependencies]
+float_eq = "1.0.1"
+
 [profile.dev]
 opt-level = 1
 

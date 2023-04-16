@@ -5,7 +5,7 @@ use crate::{Target, TARGET_SIZE};
 pub fn hit_check(
   mut commands: Commands,
   windows: Query<&Window>,
-  query: Query<(Entity, &Transform), With<Target>>,
+  query: Query<(Entity, &Transform, &Target)>,
 ) {
   let win = windows
     .get_single()
@@ -17,9 +17,13 @@ pub fn hit_check(
 
     let m_pos = vec3(cursor_position.x, cursor_y, 0.0);
 
-    for (entity, transform) in query.iter() {
+    for (entity, transform, target) in query.iter() {
       if transform.translation.distance(m_pos) < TARGET_SIZE {
-        commands.entity(entity).despawn();
+        if target.0.is_angry() {
+          println!("TOUCHED ANGRY, end game");
+        } else {
+          commands.entity(entity).despawn();
+        }
       }
     }
   } else {

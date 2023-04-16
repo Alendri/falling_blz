@@ -1,17 +1,61 @@
-use bevy::prelude::Resource;
+use bevy::{prelude::Resource, utils::HashMap};
 use rand::{distributions::Uniform, prelude::Distribution};
 use std::ops::Range;
 
 use crate::{TARGET_SIZE, WINDOW_EXPANSION};
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum ZoneId {
+  Bottom,
+  BottomLeft,
+  BottomRight,
+  Left,
+  OutsideBottom,
+  OutsideLeft,
+  OutsideRight,
+  OutsideTop,
+  Right,
+  Top,
+  TopLeft,
+  TopRight,
+  WorldBorder,
+}
+
 #[derive(Resource)]
 ///Where are the zones.
 pub struct Zones {
-  pub top: Zone,
-  pub bottom: Zone,
-  pub expanded_window: Zone,
+  map: HashMap<ZoneId, Zone>,
+}
+impl Zones {
+  pub fn new() -> Self {
+    Zones {
+      map: [
+        (ZoneId::Bottom, Zone::empty()),
+        (ZoneId::Top, Zone::empty()),
+        (ZoneId::OutsideTop, Zone::empty()),
+        (ZoneId::OutsideBottom, Zone::empty()),
+        (ZoneId::WorldBorder, Zone::empty()),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
+    }
+  }
+  pub fn get_mut(&mut self, key: &ZoneId) -> &mut Zone {
+    self.map.get_mut(key).unwrap()
+  }
+  pub fn get(&self, key: &ZoneId) -> &Zone {
+    self.map.get(key).unwrap()
+  }
 }
 
+// pub struct Zones {
+//   pub top: Zone,
+//   pub bottom: Zone,
+//   pub expanded_window: Zone,
+// }
+
+#[derive(Debug, Clone)]
 pub struct Zone {
   pub top: f32,
   pub right: f32,
@@ -62,19 +106,28 @@ impl Region for Zone {
 }
 
 pub fn update_zones(zones: &mut Zones, width: &f32, height: &f32) {
-  zones.top.update(
+  zones.get_mut(&ZoneId::Top).update(
     -TARGET_SIZE,
     width - TARGET_SIZE,
     -(height / 8.0),
     TARGET_SIZE,
   );
-  zones.bottom.update(
+  zones.get_mut(&ZoneId::Bottom).update(
     -height + (height / 8.0),
     width - TARGET_SIZE,
     -height,
     TARGET_SIZE,
   );
-  zones.expanded_window.update(
+  zones.get_mut(&ZoneId::OutsideBottom).update(
+    -height - TARGET_SIZE,
+    *width,
+    -height - WINDOW_EXPANSION,
+    0.0,
+  );
+  zones
+    .get_mut(&ZoneId::OutsideTop)
+    .update(WINDOW_EXPANSION, *width, TARGET_SIZE, 0.0);
+  zones.get_mut(&ZoneId::WorldBorder).update(
     WINDOW_EXPANSION,
     width + WINDOW_EXPANSION,
     -height - WINDOW_EXPANSION,

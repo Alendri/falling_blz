@@ -1,9 +1,10 @@
 mod interaction;
+mod math;
 mod waves;
 mod zones;
 
 use bevy::{
-  math::vec3,
+  math::{vec2, vec3},
   prelude::*,
   sprite::MaterialMesh2dBundle,
   window::{PresentMode, WindowResized},
@@ -11,16 +12,47 @@ use bevy::{
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use interaction::hit_check;
 use waves::{create_waves, Wave};
-use zones::{update_zones, Region, Zone, Zones};
+use zones::{update_zones, Region, ZoneId, Zones};
 
 pub const TARGET_SIZE: f32 = 30.0;
 ///Used when checking if any components have left the playing area and should be despawned.
 pub const WINDOW_EXPANSION: f32 = 200.0;
-const INITIAL_BALL_DIRECTION: Vec2 = Vec2::new(0.0, -1.0);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct TargetMeta {
+  pub angry: bool,
+  pub origin_zone: ZoneId,
+  pub destination_zone: ZoneId,
+}
+
+impl TargetMeta {
+  pub fn down() -> Self {
+    TargetMeta {
+      angry: false,
+      origin_zone: ZoneId::Top,
+      destination_zone: ZoneId::Bottom,
+    }
+  }
+  pub fn up() -> Self {
+    TargetMeta {
+      angry: true,
+      origin_zone: ZoneId::Bottom,
+      destination_zone: ZoneId::Top,
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
 pub enum TargetKind {
-  Regular,
+  Regular(TargetMeta),
+  Bubble(TargetMeta),
+}
+impl TargetKind {
+  pub fn is_angry(&self) -> bool {
+    match self {
+      TargetKind::Bubble(meta) | TargetKind::Regular(meta) => meta.angry,
+    }
+  }
 }
 
 fn main() {
@@ -92,11 +124,7 @@ fn setup(
     .expect("Could not get window reference.");
   let win_w = win.width();
   let win_h = win.height();
-  let mut zones = Zones {
-    top: Zone::empty(),
-    bottom: Zone::empty(),
-    expanded_window: Zone::empty(),
-  };
+  let mut zones = Zones::new();
   update_zones(&mut zones, &win_w, &win_h);
   commands.insert_resource(zones);
 
@@ -113,13 +141,22 @@ fn apply_velocity(
     let x = transform.translation.x + velocity.x * time.delta_seconds();
     let y = transform.translation.y + velocity.y * time.delta_seconds();
 
-    if target.is_some() && zones.bottom.is_pt_inside(x, y) {
-      //If this entity is a target and it is inside the bottom zone call end_game.
-      end_game();
-      commands.entity(entity).despawn();
+    if let Some(target) = target {
+      let (destination_zone, angry) = match &target.0 {
+        TargetKind::Bubble(meta) | TargetKind::Regular(meta) => {
+          (zones.get(&meta.destination_zone), &meta.angry)
+        }
+      };
+      if destination_zone.is_pt_inside(x, y) {
+        if !angry {
+          //If this a target we should have caught and it is inside its destination call end_game.
+          end_game();
+        }
+        commands.entity(entity).despawn();
+      }
     }
 
-    if !zones.expanded_window.is_pt_inside(x, y) {
+    if !zones.get(&ZoneId::WorldBorder).is_pt_inside(x, y) {
       commands.entity(entity).despawn();
     }
 
@@ -178,21 +215,24 @@ fn spawn(
   }
 
   let wave = &mut waves.current_wave;
-  // println!("wave:{:#?}, offset:{:?}", wave, offset);
 
   if let Some(bucket) = wave.get_bucket(time.elapsed_seconds_f64()) {
     println!("wave:{:#?}", wave);
     println!("bucket:{:#?}", bucket);
     for i in 0..bucket.count {
-      let (x, y) = zones.top.get_rand_pt();
+      let spawn_zone = zones.get(&bucket.origin);
+      let (x, y) = spawn_zone.get_rand_pt();
+      let destination_zone = zones.get(&bucket.destination);
       let val = wave.index as isize % 4;
-      let color = match val {
-        0 => Color::PINK,
+      let mut color = match val {
         1 => Color::LIME_GREEN,
         2 => Color::AQUAMARINE,
         3 => Color::FUCHSIA,
         _ => Color::PURPLE,
       };
+      if bucket.kind.is_angry() {
+        color = Color::RED
+      }
       // println!("spawn:{:?},{:?}   {:?}", x, y, color);
       commands.spawn((
         MaterialMesh2dBundle {
@@ -201,8 +241,8 @@ fn spawn(
           transform: Transform::from_translation(Vec3::new(x as f32, y as f32, i as f32)),
           ..default()
         },
-        Target(TargetKind::Regular),
-        Velocity(INITIAL_BALL_DIRECTION.normalize() * wave.velocity),
+        Target(bucket.kind.clone()),
+        Velocity(vec2(0.0, destination_zone.bottom - y as f32).normalize() * wave.velocity),
       ));
     }
   };

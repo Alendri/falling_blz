@@ -1,4 +1,4 @@
-use crate::TargetKind;
+use crate::{TargetKind, TargetMeta, ZoneId};
 use bevy::render::render_resource::encase::rts_array::Length;
 use rand::Rng;
 
@@ -8,6 +8,8 @@ static DEFAULT_WAVE_DURATION: f64 = 10.0;
 pub struct WaveBucket {
   pub kind: TargetKind,
   pub count: isize,
+  pub destination: ZoneId,
+  pub origin: ZoneId,
   spawn_offset: f64,
 }
 
@@ -154,9 +156,16 @@ impl WavesBuilder {
               let offset_start = spawn_start_offset + bucket_duration * i as f64;
               let offset_end = spawn_start_offset + bucket_duration * (i + 1) as f64;
               let spawn_offset = rng.gen_range(offset_start..offset_end);
+              let (origin, destination) = match &kind {
+                TargetKind::Bubble(meta) | TargetKind::Regular(meta) => {
+                  (meta.origin_zone.clone(), meta.destination_zone.clone())
+                }
+              };
               WaveBucket {
                 kind,
                 count,
+                origin,
+                destination,
                 spawn_offset,
               }
             })
@@ -172,26 +181,36 @@ impl WavesBuilder {
 }
 
 pub fn create_waves() -> Vec<Wave> {
+  let bubble_meta = TargetMeta {
+    angry: true,
+    destination_zone: ZoneId::OutsideTop,
+    origin_zone: ZoneId::OutsideBottom,
+  };
   WavesBuilder::new(40.0)
     .set_vel_increase(2.0)
     .set_duration(6.0)
     .wave()
-    .add(TargetKind::Regular, 1)
+    .add(TargetKind::Regular(TargetMeta::down()), 1)
     .wave_with_duration(2.0)
-    .add(TargetKind::Regular, 2)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 1)
+    .add(TargetKind::Regular(TargetMeta::down()), 2)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 1)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 1)
     .wave_with_duration(10.0)
-    .add(TargetKind::Regular, 4)
-    .add(TargetKind::Regular, 2)
-    .add(TargetKind::Regular, 1)
+    .add(TargetKind::Regular(TargetMeta::down()), 4)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 4)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 2)
+    .add(TargetKind::Regular(TargetMeta::down()), 2)
+    .add(TargetKind::Bubble(bubble_meta.clone()), 1)
     .set_vel_increase(8.0)
     .wave()
-    .add(TargetKind::Regular, 4)
+    .add(TargetKind::Regular(TargetMeta::down()), 4)
     .wave()
-    .add(TargetKind::Regular, 4)
+    .add(TargetKind::Regular(TargetMeta::down()), 4)
     .wave()
-    .add(TargetKind::Regular, 4)
+    .add(TargetKind::Regular(TargetMeta::down()), 4)
     .wave()
     .set_vel(1000.0)
-    .add(TargetKind::Regular, 100)
+    .add(TargetKind::Regular(TargetMeta::down()), 100)
     .build()
 }
